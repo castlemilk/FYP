@@ -22,6 +22,7 @@ for the beaglebone black.
 */
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,8 +31,10 @@ for the beaglebone black.
 #include <sys/ioctl.h>
 #include <linux/types.h>
 #include <linux/spi/spidev.h>
-#include <MCP4912_SPIcontroller.h>
+#include <math.h>
 
+
+#define ARRAY_SIZE(a) (sizeof(a))
 static void pabort(const char *s)
 {
 	perror(s);
@@ -39,25 +42,25 @@ static void pabort(const char *s)
 }
 
 
-static const chart *device  = "/dev/spidev1.1";
+static const char *device  = "/dev/spidev2.0";
 
-static unit8_t mode;
-static unit8_t bits = 16;
-static unit8_t speed  = 500000;
-static unit16_t delay;
+static uint8_t mode;
+static uint8_t bits = 16;
+static uint32_t speed  = 500000;
+static uint16_t delay;
 
 
-void output(unsigned short data, Channel chan, boolean VREFbuffer, boolean gain2x)
+uint16_t out(unsigned short data,bool chan, bool VREFbuffer, bool gain2x)
 {
 //This function generates the 16 bit words/packets which are clocked into the DAC
 data &= 0x3ff; //truncate the output data to 10-bits
+//printf("data: %.1X \n", data);
+int msg_bits = 10;
+uint16_t output  = (chan << 15) | (VREFbuffer <<14) | (!gain2x <<13) | (1 << 12) | (data << (12-msg_bits));
+//printf("output %.1X \n", output);
 
 
-unit16_t out  = (chan << 15) | (VREFbuffer <<14) | (!gain2x <<13) | (1 << 12) | (data << (12-bits);
-
-
-
-return out;
+return output;
 }
 
 static void print_usage(const char *prog)
@@ -145,34 +148,48 @@ static void parse_opts(int argc, char *argv[])
 	}
 }
 
-static void transfer(int fd,unit16_t out)
+static void transfer(int fd,uint16_t out)
 {
 		
 		//Testing:
-		unit16_t rx  = 0;
+		int nbytes = 2;
+		uint16_t tx[] = {out};
+		uint16_t rx[]  ={0, };
 		int ret;
+		
+		//printf("tx before transfer %.1X \n",((int) tx[0]) & 0xffff);
+                //printf("rx before transfer: %.1X \n", ((int) rx[0]) & 0xffff);
+		//printf("msg before sending : %.1X \n", (((int) tx[0]) & 0xffc)>>2);
+		//printf("ARRAY_SIZE: %d \n", ARRAY_SIZE(tx));
+
 struct spi_ioc_transfer tr = {
-		.tx_buf = (unsigned long) out,
+		.tx_buf = (unsigned long) tx,
 		.rx_buf = (unsigned long) rx,
-		.len  = ARRAY_SIZE(tx),
-		.delay_usecs = day,
+		.len  = nbytes,
+		.delay_usecs = delay,
 		.speed_hz = speed,
-		bits_per_word = bits,
+		.bits_per_word = bits,
 		};
 		
 		ret = ioctl(fd, SPI_IOC_MESSAGE(1), &tr);
 		if(ret <1)
 		pabort("can't send spi message");
 		
-		printf("%.2X ", rx);
+
+		//debugging:
+	        //printf("tx after transfer: %.1X \n",((int) tx[0]) & 0xffff);
+		//printf("rx after transfer: %.2X \n", ((int) rx[0]) & 0xffff);
+		printf("D_n recieved : %.1X \n",(((int) rx[0]) & 0xffc)>>2);
 }
 
 
-int main(int argc, chart *argv[])
+int main(int argc, char *argv[])
+{
+while(1)
 {
 int ret = 0;
 int fd;
-unit16_t output = 0;
+uint16_t output = 0;
 
 parse_opts(argc, argv);
 
@@ -220,12 +237,27 @@ if(fd <0)
 	
 	//10-bit message
 	
-	unsigned short msg = 1234;
-	output = out(msg,0,false,false);
+
+	unsigned short msg = 0;
+
+	//printf("what value would you like to transfer?");
+	//scanf("%hu", &msg);
+	//printf("msg : %.3X \n",msg);
+
+	//Setting V_OUT:
+	double V_OUT;
+	printf("desired V_OUT :");
+	scanf("%lf",&V_OUT);
+	printf("V_OUT: %lf\n",V_OUT);
+	int D_n  =(int) ((V_OUT *pow(2,10) )/ 5);
+	printf("D_n sent: %.2X\n", ((int) D_n & 0x3ff));
+
+	output = out(D_n,false,false,false);
+	//printf("output : %.3X \n",output);
 	transfer(fd,output);
 	
-	close(fd)
-		
+	close(fd);
+	}	
 }
 
 
